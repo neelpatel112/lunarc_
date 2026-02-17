@@ -1,4 +1,4 @@
-// src/main.ts - DOOM Engine in TypeScript
+// src/main.ts - Authentic DOOM Style
 
 interface Player {
     x: number;
@@ -8,8 +8,15 @@ interface Player {
     planeX: number;
     planeY: number;
     health: number;
+    armor: number;
     ammo: number;
     weapon: number;
+    frags: number;
+    keys: {
+        blue: boolean;
+        yellow: boolean;
+        red: boolean;
+    };
 }
 
 interface Texture {
@@ -21,17 +28,17 @@ interface Texture {
 class DoomEngine {
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
-    private miniMapCanvas: HTMLCanvasElement;
-    private miniMapCtx: CanvasRenderingContext2D;
+    private automapCanvas: HTMLCanvasElement;
+    private automapCtx: CanvasRenderingContext2D;
     
-    // Screen dimensions
-    private readonly width = 1024;
-    private readonly height = 768;
+    // Screen dimensions (DOOM resolution)
+    private readonly width = 960;
+    private readonly height = 720;
     
     // Player
     private player: Player;
     
-    // Map - LARGE MAP (32x32)
+    // Map - Classic DOOM E1M1 style
     private readonly mapWidth = 32;
     private readonly mapHeight = 32;
     private worldMap: number[][];
@@ -41,23 +48,27 @@ class DoomEngine {
     private readonly texWidth = 64;
     private readonly texHeight = 64;
     
-    // Colors for floor/ceiling
-    private readonly floorColor = 0x402010;  // Dark brown
-    private readonly ceilingColor = 0x201010; // Very dark brown
+    // Game state
+    private automapVisible = false;
+    private weaponBob = 0;
+    private frame = 0;
+    private lastShot = 0;
     
-    // FPS calculation
-    private frameCount = 0;
-    private lastTime = performance.now();
-    private fps = 0;
+    // DOOM palette colors
+    private readonly floorColors = [0x402010, 0x4a2a1a, 0x351a0e];
+    private readonly ceilingColors = [0x201010, 0x251515, 0x1a0e0e];
+    
+    // Face states
+    private readonly faces = ['😐', '😮', '😲', '😫', '💀'];
+    private currentFace = 0;
     
     constructor() {
-        // Get canvases
         this.canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
         this.ctx = this.canvas.getContext('2d', { alpha: false })!;
-        this.miniMapCanvas = document.getElementById('minimap') as HTMLCanvasElement;
-        this.miniMapCtx = this.miniMapCanvas.getContext('2d')!;
+        this.automapCanvas = document.getElementById('automap') as HTMLCanvasElement;
+        this.automapCtx = this.automapCanvas.getContext('2d')!;
         
-        // Initialize player
+        // Initialize player with DOOM stats
         this.player = {
             x: 15.5,
             y: 15.5,
@@ -66,96 +77,93 @@ class DoomEngine {
             planeX: 0,
             planeY: 0.66,
             health: 100,
+            armor: 100,
             ammo: 50,
-            weapon: 0
+            weapon: 0,
+            frags: 0,
+            keys: { blue: false, yellow: false, red: false }
         };
         
-        // Create HUGE map (32x32)
-        this.worldMap = this.generateLargeMap();
+        // Create DOOM-style map
+        this.worldMap = this.createDoomMap();
         
-        // Generate textures
+        // Generate DOOM textures
         this.generateTextures();
         
-        // Start game
+        // Initialize game
         this.init();
     }
     
-    // Generate a LARGE, interesting map
-    private generateLargeMap(): number[][] {
+    // Create E1M1-style map
+    private createDoomMap(): number[][] {
         const map: number[][] = [];
         
-        // Fill with empty space first
+        // Initialize with 0
         for (let y = 0; y < this.mapHeight; y++) {
-            map[y] = [];
-            for (let x = 0; x < this.mapWidth; x++) {
-                map[y][x] = 0;
-            }
+            map[y] = new Array(this.mapWidth).fill(0);
         }
         
-        // Create outer walls
+        // Outer walls
         for (let x = 0; x < this.mapWidth; x++) {
-            map[0][x] = 1;           // Top wall
-            map[this.mapHeight-1][x] = 1; // Bottom wall
+            map[0][x] = 1;
+            map[this.mapHeight-1][x] = 1;
         }
         for (let y = 0; y < this.mapHeight; y++) {
-            map[y][0] = 1;           // Left wall
-            map[y][this.mapWidth-1] = 1; // Right wall
+            map[y][0] = 1;
+            map[y][this.mapWidth-1] = 1;
         }
         
-        // Create a MAZE-like structure
-        // Room 1 (top-left)
-        for (let y = 3; y < 8; y++) {
-            for (let x = 3; x < 8; x++) {
-                if (Math.random() > 0.3) map[y][x] = Math.floor(Math.random() * 4) + 1;
+        // E1M1 style layout (Tech Base)
+        // Main hall
+        for (let y = 5; y < 10; y++) {
+            for (let x = 5; x < 20; x++) {
+                if (x % 3 === 0 && y % 3 === 0) {
+                    map[y][x] = 2; // Pillars
+                }
             }
         }
         
-        // Room 2 (top-right)
-        for (let y = 3; y < 8; y++) {
-            for (let x = 20; x < 28; x++) {
-                if (Math.random() > 0.4) map[y][x] = Math.floor(Math.random() * 4) + 1;
+        // Side rooms
+        // Room 1 (Blue key room)
+        for (let y = 15; y < 22; y++) {
+            for (let x = 5; x < 12; x++) {
+                if (Math.random() > 0.3) {
+                    map[y][x] = 3; // Computer textures
+                }
             }
         }
         
-        // Room 3 (bottom-left)
-        for (let y = 20; y < 28; y++) {
-            for (let x = 3; x < 8; x++) {
-                if (Math.random() > 0.4) map[y][x] = Math.floor(Math.random() * 4) + 1;
+        // Room 2 (Yellow key room)
+        for (let y = 15; y < 22; y++) {
+            for (let x = 18; x < 25; x++) {
+                if (Math.random() > 0.3) {
+                    map[y][x] = 4; // Metal textures
+                }
             }
         }
         
-        // Room 4 (bottom-right - BIG ROOM)
-        for (let y = 20; y < 28; y++) {
-            for (let x = 20; x < 28; x++) {
-                if (Math.random() > 0.2) map[y][x] = Math.floor(Math.random() * 4) + 1;
+        // Secret area
+        map[25][25] = 5; // Secret door
+        for (let y = 22; y < 28; y++) {
+            for (let x = 22; x < 28; x++) {
+                if (y > 23 && x > 23) {
+                    map[y][x] = 6; // Marble (secret area)
+                }
             }
         }
         
-        // Create corridors connecting rooms
-        // Horizontal corridor
-        for (let x = 8; x < 20; x++) {
-            map[8][x] = 1;
-            map[20][x] = 1;
+        // Corridors
+        for (let i = 10; i < 22; i++) {
+            map[i][12] = 1;
+            map[i][17] = 1;
         }
         
-        // Vertical corridors
-        for (let y = 8; y < 20; y++) {
-            map[y][8] = 1;
-            map[y][20] = 1;
-        }
-        
-        // Add some pillars in the big room
-        map[22][22] = 2;
-        map[22][25] = 3;
-        map[25][22] = 4;
-        map[25][25] = 5;
-        
-        // Add some random pillars
-        for (let i = 0; i < 10; i++) {
+        // Add some random decorations
+        for (let i = 0; i < 20; i++) {
             const x = Math.floor(Math.random() * 28) + 2;
             const y = Math.floor(Math.random() * 28) + 2;
             if (map[y][x] === 0) {
-                map[y][x] = Math.floor(Math.random() * 5) + 1;
+                map[y][x] = Math.floor(Math.random() * 4) + 1;
             }
         }
         
@@ -164,82 +172,145 @@ class DoomEngine {
     
     // Generate DOOM-style textures
     private generateTextures() {
-        // Create 8 different textures
-        for (let t = 0; t < 8; t++) {
-            const pixels = new Uint32Array(this.texWidth * this.texHeight);
-            
-            for (let y = 0; y < this.texHeight; y++) {
-                for (let x = 0; x < this.texWidth; x++) {
-                    let color = 0;
-                    
-                    switch(t) {
-                        case 0: // BRICK
-                            if ((Math.floor(x/8) + Math.floor(y/8)) % 2 === 0) {
-                                color = 0x8B4513; // Brown
-                            } else {
-                                color = 0xCD853F; // Peru brown
-                            }
-                            break;
-                            
-                        case 1: // STONE
-                            color = 0x808080 + ((x ^ y) % 0x40);
-                            break;
-                            
-                        case 2: // WOOD
-                            if (y % 16 < 8) {
-                                color = 0x8B4513; // Dark wood
-                            } else {
-                                color = 0xD2691E; // Chocolate
-                            }
-                            break;
-                            
-                        case 3: // METAL
-                            color = 0x4A4A4A + ((x * y) % 0x30);
-                            break;
-                            
-                        case 4: // DOOR
-                            color = 0x654321; // Dark brown
-                            break;
-                            
-                        case 5: // BLOODSTONE
-                            if (x % 16 < 8 && y % 16 < 8) {
-                                color = 0x8B0000; // Dark red
-                            } else {
-                                color = 0x5C4033; // Dark brown
-                            }
-                            break;
-                            
-                        case 6: // COMPUTER
-                            if (x % 8 < 4 && y % 8 < 4) {
-                                color = 0x00FF00; // Green
-                            } else {
-                                color = 0x006400; // Dark green
-                            }
-                            break;
-                            
-                        case 7: // MARBLE
-                            color = 0xE0E0E0 - ((x + y) % 0x40);
-                            break;
-                    }
-                    
-                    pixels[y * this.texWidth + x] = color;
-                }
-            }
-            
+        const textures = [
+            this.createBrickTexture,      // 0: BRICK
+            this.createStoneTexture,       // 1: STONE
+            this.createComputerTexture,    // 2: COMPUTER
+            this.createMetalTexture,       // 3: METAL
+            this.createWoodTexture,        // 4: WOOD
+            this.createMarbleTexture,      // 5: MARBLE
+            this.createDoorTexture,        // 6: DOOR
+            this.createBloodTexture        // 7: BLOOD
+        ];
+        
+        textures.forEach((createFunc, index) => {
             this.textures.push({
                 width: this.texWidth,
                 height: this.texHeight,
-                pixels: pixels
+                pixels: createFunc.call(this)
             });
+        });
+    }
+    
+    private createBrickTexture(): Uint32Array {
+        const pixels = new Uint32Array(this.texWidth * this.texHeight);
+        for (let y = 0; y < this.texHeight; y++) {
+            for (let x = 0; x < this.texWidth; x++) {
+                const brickRow = Math.floor(y / 16);
+                const brickCol = Math.floor(x / 32);
+                const inBrick = (brickRow + brickCol) % 2 === 0;
+                pixels[y * this.texWidth + x] = inBrick ? 0x8B4513 : 0x5D3A1A;
+            }
         }
+        return pixels;
+    }
+    
+    private createStoneTexture(): Uint32Array {
+        const pixels = new Uint32Array(this.texWidth * this.texHeight);
+        for (let y = 0; y < this.texHeight; y++) {
+            for (let x = 0; x < this.texWidth; x++) {
+                const noise = (Math.sin(x * 0.3) * Math.cos(y * 0.3) * 0.2 + 0.8) * 255;
+                pixels[y * this.texWidth + x] = (noise << 16) | (noise << 8) | noise;
+            }
+        }
+        return pixels;
+    }
+    
+    private createComputerTexture(): Uint32Array {
+        const pixels = new Uint32Array(this.texWidth * this.texHeight);
+        for (let y = 0; y < this.texHeight; y++) {
+            for (let x = 0; x < this.texWidth; x++) {
+                if (x % 16 < 8 && y % 16 < 8) {
+                    pixels[y * this.texWidth + x] = 0x00FF00; // Green screen
+                } else if (x % 8 === 0 || y % 8 === 0) {
+                    pixels[y * this.texWidth + x] = 0x4A4A4A; // Metal border
+                } else {
+                    pixels[y * this.texWidth + x] = 0x2A2A2A; // Dark metal
+                }
+            }
+        }
+        return pixels;
+    }
+    
+    private createMetalTexture(): Uint32Array {
+        const pixels = new Uint32Array(this.texWidth * this.texHeight);
+        for (let y = 0; y < this.texHeight; y++) {
+            for (let x = 0; x < this.texWidth; x++) {
+                const rivet = (x % 16 === 8 && y % 16 === 8) ? 0xC0C0C0 : 0x808080;
+                pixels[y * this.texWidth + x] = rivet;
+            }
+        }
+        return pixels;
+    }
+    
+    private createWoodTexture(): Uint32Array {
+        const pixels = new Uint32Array(this.texWidth * this.texHeight);
+        for (let y = 0; y < this.texHeight; y++) {
+            for (let x = 0; x < this.texWidth; x++) {
+                const grain = Math.sin(y * 0.2) * 0x20 + 0x60;
+                pixels[y * this.texWidth + x] = (grain << 16) | (grain << 8) | grain;
+            }
+        }
+        return pixels;
+    }
+    
+    private createMarbleTexture(): Uint32Array {
+        const pixels = new Uint32Array(this.texWidth * this.texHeight);
+        for (let y = 0; y < this.texHeight; y++) {
+            for (let x = 0; x < this.texWidth; x++) {
+                const vein = Math.sin(x * 0.2) * Math.cos(y * 0.2) > 0.5 ? 0xE0E0E0 : 0xFFFFFF;
+                pixels[y * this.texWidth + x] = vein;
+            }
+        }
+        return pixels;
+    }
+    
+    private createDoorTexture(): Uint32Array {
+        const pixels = new Uint32Array(this.texWidth * this.texHeight);
+        for (let y = 0; y < this.texHeight; y++) {
+            for (let x = 0; x < this.texWidth; x++) {
+                const isHandle = (x > 25 && x < 35 && y > 30 && y < 35);
+                pixels[y * this.texWidth + x] = isHandle ? 0xFFD700 : 0x8B4513;
+            }
+        }
+        return pixels;
+    }
+    
+    private createBloodTexture(): Uint32Array {
+        const pixels = new Uint32Array(this.texWidth * this.texHeight);
+        for (let y = 0; y < this.texHeight; y++) {
+            for (let x = 0; x < this.texWidth; x++) {
+                const blood = (Math.sin(x * 0.5) * Math.cos(y * 0.5) > 0.3) ? 0x8B0000 : 0x5A0000;
+                pixels[y * this.texWidth + x] = blood;
+            }
+        }
+        return pixels;
     }
     
     private init() {
-        // Set up input handlers
         this.setupInput();
-        
-        // Start game loop
+        this.setupUI();
         this.gameLoop();
+    }
+    
+    private setupUI() {
+        // Weapon selection
+        document.querySelectorAll('.weapon-slot').forEach((slot, index) => {
+            slot.addEventListener('click', () => {
+                this.player.weapon = index;
+                this.updateWeaponUI(index);
+            });
+        });
+    }
+    
+    private updateWeaponUI(activeWeapon: number) {
+        document.querySelectorAll('.weapon-slot').forEach((slot, index) => {
+            if (index === activeWeapon) {
+                slot.classList.add('active');
+            } else {
+                slot.classList.remove('active');
+            }
+        });
     }
     
     private setupInput() {
@@ -249,56 +320,63 @@ class DoomEngine {
             const key = e.key;
             keys[key] = true;
             
-            // Movement
             const moveSpeed = 0.05;
             const rotSpeed = 0.03;
             
+            // Movement
             if (keys['w'] || keys['W']) {
-                // Move forward
-                if (this.worldMap[Math.floor(this.player.y)][Math.floor(this.player.x + this.player.dirX * moveSpeed * 2)] === 0) {
-                    this.player.x += this.player.dirX * moveSpeed;
+                const newX = this.player.x + this.player.dirX * moveSpeed;
+                const newY = this.player.y + this.player.dirY * moveSpeed;
+                
+                if (this.worldMap[Math.floor(this.player.y)][Math.floor(newX)] === 0) {
+                    this.player.x = newX;
                 }
-                if (this.worldMap[Math.floor(this.player.y + this.player.dirY * moveSpeed * 2)][Math.floor(this.player.x)] === 0) {
-                    this.player.y += this.player.dirY * moveSpeed;
+                if (this.worldMap[Math.floor(newY)][Math.floor(this.player.x)] === 0) {
+                    this.player.y = newY;
                 }
+                
+                // Weapon bob
+                this.weaponBob = Math.sin(this.frame * 0.2) * 5;
             }
             
             if (keys['s'] || keys['S']) {
-                // Move backward
-                if (this.worldMap[Math.floor(this.player.y)][Math.floor(this.player.x - this.player.dirX * moveSpeed * 2)] === 0) {
-                    this.player.x -= this.player.dirX * moveSpeed;
+                const newX = this.player.x - this.player.dirX * moveSpeed;
+                const newY = this.player.y - this.player.dirY * moveSpeed;
+                
+                if (this.worldMap[Math.floor(this.player.y)][Math.floor(newX)] === 0) {
+                    this.player.x = newX;
                 }
-                if (this.worldMap[Math.floor(this.player.y - this.player.dirY * moveSpeed * 2)][Math.floor(this.player.x)] === 0) {
-                    this.player.y -= this.player.dirY * moveSpeed;
+                if (this.worldMap[Math.floor(newY)][Math.floor(this.player.x)] === 0) {
+                    this.player.y = newY;
                 }
             }
             
             if (keys['a'] || keys['A']) {
-                // Strafe left
                 const strafeX = -this.player.dirY * moveSpeed;
                 const strafeY = this.player.dirX * moveSpeed;
-                if (this.worldMap[Math.floor(this.player.y)][Math.floor(this.player.x + strafeX * 2)] === 0) {
+                
+                if (this.worldMap[Math.floor(this.player.y)][Math.floor(this.player.x + strafeX)] === 0) {
                     this.player.x += strafeX;
                 }
-                if (this.worldMap[Math.floor(this.player.y + strafeY * 2)][Math.floor(this.player.x)] === 0) {
+                if (this.worldMap[Math.floor(this.player.y + strafeY)][Math.floor(this.player.x)] === 0) {
                     this.player.y += strafeY;
                 }
             }
             
             if (keys['d'] || keys['D']) {
-                // Strafe right
                 const strafeX = this.player.dirY * moveSpeed;
                 const strafeY = -this.player.dirX * moveSpeed;
-                if (this.worldMap[Math.floor(this.player.y)][Math.floor(this.player.x + strafeX * 2)] === 0) {
+                
+                if (this.worldMap[Math.floor(this.player.y)][Math.floor(this.player.x + strafeX)] === 0) {
                     this.player.x += strafeX;
                 }
-                if (this.worldMap[Math.floor(this.player.y + strafeY * 2)][Math.floor(this.player.x)] === 0) {
+                if (this.worldMap[Math.floor(this.player.y + strafeY)][Math.floor(this.player.x)] === 0) {
                     this.player.y += strafeY;
                 }
             }
             
+            // Rotation
             if (keys['ArrowLeft']) {
-                // Rotate left
                 const oldDirX = this.player.dirX;
                 this.player.dirX = this.player.dirX * Math.cos(-rotSpeed) - this.player.dirY * Math.sin(-rotSpeed);
                 this.player.dirY = oldDirX * Math.sin(-rotSpeed) + this.player.dirY * Math.cos(-rotSpeed);
@@ -309,7 +387,6 @@ class DoomEngine {
             }
             
             if (keys['ArrowRight']) {
-                // Rotate right
                 const oldDirX = this.player.dirX;
                 this.player.dirX = this.player.dirX * Math.cos(rotSpeed) - this.player.dirY * Math.sin(rotSpeed);
                 this.player.dirY = oldDirX * Math.sin(rotSpeed) + this.player.dirY * Math.cos(rotSpeed);
@@ -319,12 +396,25 @@ class DoomEngine {
                 this.player.planeY = oldPlaneX * Math.sin(rotSpeed) + this.player.planeY * Math.cos(rotSpeed);
             }
             
+            // Tab for automap
+            if (key === 'Tab') {
+                this.automapVisible = !this.automapVisible;
+                this.automapCanvas.style.display = this.automapVisible ? 'block' : 'none';
+                e.preventDefault();
+            }
+            
             // Weapon switching
             if (key === '1') this.player.weapon = 0;
             if (key === '2') this.player.weapon = 1;
             if (key === '3') this.player.weapon = 2;
             if (key === '4') this.player.weapon = 3;
             
+            // Fire with Ctrl
+            if (key === 'Control') {
+                this.fire();
+            }
+            
+            this.updateWeaponUI(this.player.weapon);
             e.preventDefault();
         });
         
@@ -333,28 +423,37 @@ class DoomEngine {
         });
     }
     
-    // Raycasting renderer
+    private fire() {
+        const now = Date.now();
+        if (now - this.lastShot > 200 && this.player.ammo > 0) {
+            this.player.ammo--;
+            this.player.frags++;
+            this.lastShot = now;
+            
+            // Face reaction
+            this.currentFace = 2; // Surprised face
+            setTimeout(() => {
+                this.currentFace = this.player.health > 50 ? 0 : 3;
+            }, 200);
+        }
+    }
+    
     private render() {
-        // Create image data
         const imageData = this.ctx.createImageData(this.width, this.height);
         const data = imageData.data;
         
-        // Raycasting loop
+        // Raycasting
         for (let x = 0; x < this.width; x++) {
-            // Calculate ray position and direction
             const cameraX = 2 * x / this.width - 1;
             const rayDirX = this.player.dirX + this.player.planeX * cameraX;
             const rayDirY = this.player.dirY + this.player.planeY * cameraX;
             
-            // Map position
             let mapX = Math.floor(this.player.x);
             let mapY = Math.floor(this.player.y);
             
-            // Length of ray from current position to next side
             const deltaDistX = Math.abs(1 / rayDirX);
             const deltaDistY = Math.abs(1 / rayDirY);
             
-            // Step direction and initial side distance
             let stepX: number;
             let stepY: number;
             let sideDistX: number;
@@ -376,7 +475,6 @@ class DoomEngine {
                 sideDistY = (mapY + 1.0 - this.player.y) * deltaDistY;
             }
             
-            // Perform DDA
             let hit = false;
             let side = 0;
             
@@ -394,11 +492,10 @@ class DoomEngine {
                 if (mapX >= 0 && mapX < this.mapWidth && mapY >= 0 && mapY < this.mapHeight) {
                     if (this.worldMap[mapY][mapX] > 0) hit = true;
                 } else {
-                    hit = true; // Hit boundary
+                    hit = true;
                 }
             }
             
-            // Calculate distance to wall
             let perpWallDist: number;
             if (side === 0) {
                 perpWallDist = (mapX - this.player.x + (1 - stepX) / 2) / rayDirX;
@@ -406,20 +503,16 @@ class DoomEngine {
                 perpWallDist = (mapY - this.player.y + (1 - stepY) / 2) / rayDirY;
             }
             
-            // Calculate line height
             const lineHeight = Math.floor(this.height / perpWallDist);
             
-            // Calculate drawing limits
             let drawStart = -lineHeight / 2 + this.height / 2;
             if (drawStart < 0) drawStart = 0;
             let drawEnd = lineHeight / 2 + this.height / 2;
             if (drawEnd >= this.height) drawEnd = this.height - 1;
             
-            // Get texture
             const texNum = this.worldMap[mapY][mapX] - 1;
             const texture = this.textures[texNum % this.textures.length];
             
-            // Calculate texture X coordinate
             let wallX: number;
             if (side === 0) {
                 wallX = this.player.y + perpWallDist * rayDirY;
@@ -430,7 +523,7 @@ class DoomEngine {
             
             const texX = Math.floor(wallX * texture.width);
             
-            // Draw the wall slice
+            // Draw wall
             for (let y = drawStart; y < drawEnd; y++) {
                 const d = y * 256 - this.height * 128 + lineHeight * 128;
                 const texY = Math.floor((d * texture.height) / lineHeight / 256);
@@ -438,7 +531,6 @@ class DoomEngine {
                 if (texY >= 0 && texY < texture.height) {
                     let color = texture.pixels[texY * texture.width + texX];
                     
-                    // Make sides darker
                     if (side === 1) {
                         // Darken y-sides
                         const r = ((color >> 16) & 0xFF) >> 1;
@@ -448,119 +540,148 @@ class DoomEngine {
                     }
                     
                     const pixelIndex = (y * this.width + x) * 4;
-                    data[pixelIndex] = (color >> 16) & 0xFF;     // R
-                    data[pixelIndex + 1] = (color >> 8) & 0xFF;  // G
-                    data[pixelIndex + 2] = color & 0xFF;         // B
-                    data[pixelIndex + 3] = 255;                   // A
+                    data[pixelIndex] = (color >> 16) & 0xFF;
+                    data[pixelIndex + 1] = (color >> 8) & 0xFF;
+                    data[pixelIndex + 2] = color & 0xFF;
+                    data[pixelIndex + 3] = 255;
                 }
             }
             
-            // Draw floor and ceiling
+            // Draw floor and ceiling with DOOM colors
+            const floorColor = this.floorColors[Math.floor(Math.random() * this.floorColors.length)];
+            const ceilingColor = this.ceilingColors[Math.floor(Math.random() * this.ceilingColors.length)];
+            
             for (let y = drawEnd + 1; y < this.height; y++) {
-                // Floor
                 const pixelIndex = (y * this.width + x) * 4;
-                data[pixelIndex] = 0x40;      // R
-                data[pixelIndex + 1] = 0x20;   // G
-                data[pixelIndex + 2] = 0x10;   // B
-                data[pixelIndex + 3] = 255;    // A
+                data[pixelIndex] = (floorColor >> 16) & 0xFF;
+                data[pixelIndex + 1] = (floorColor >> 8) & 0xFF;
+                data[pixelIndex + 2] = floorColor & 0xFF;
+                data[pixelIndex + 3] = 255;
             }
             
             for (let y = 0; y < drawStart; y++) {
-                // Ceiling
                 const pixelIndex = (y * this.width + x) * 4;
-                data[pixelIndex] = 0x20;       // R
-                data[pixelIndex + 1] = 0x10;    // G
-                data[pixelIndex + 2] = 0x08;    // B
-                data[pixelIndex + 3] = 255;     // A
+                data[pixelIndex] = (ceilingColor >> 16) & 0xFF;
+                data[pixelIndex + 1] = (ceilingColor >> 8) & 0xFF;
+                data[pixelIndex + 2] = ceilingColor & 0xFF;
+                data[pixelIndex + 3] = 255;
             }
         }
         
-        // Draw the frame
-        this.ctx.putImageData(imageData, 0, 0);
-    }
-    
-    private renderMinimap() {
-        this.miniMapCtx.fillStyle = '#000';
-        this.miniMapCtx.fillRect(0, 0, 200, 200);
-        
-        const cellSize = 6; // 200/32 ≈ 6.25, so 6 works
-        
-        // Draw map
-        for (let y = 0; y < this.mapHeight; y++) {
-            for (let x = 0; x < this.mapWidth; x++) {
-                if (this.worldMap[y][x] > 0) {
-                    // Wall - different colors for different textures
-                    const colors = ['#8B4513', '#808080', '#8B4513', '#4A4A4A', '#654321', '#8B0000'];
-                    this.miniMapCtx.fillStyle = colors[(this.worldMap[y][x] - 1) % colors.length];
-                    this.miniMapCtx.fillRect(x * cellSize, y * cellSize, cellSize - 1, cellSize - 1);
+        // Draw weapon sprite (DOOM style)
+        if (this.player.weapon === 0) { // Pistol
+            const weaponWidth = 200;
+            const weaponHeight = 200;
+            const weaponX = (this.width - weaponWidth) / 2 + 50;
+            const weaponY = this.height - weaponHeight + 20 + this.weaponBob;
+            
+            for (let wy = 0; wy < weaponHeight; wy++) {
+                for (let wx = 0; wx < weaponWidth; wx++) {
+                    const screenX = weaponX + wx;
+                    const screenY = weaponY + wy;
+                    
+                    if (screenX >= 0 && screenX < this.width && screenY >= 0 && screenY < this.height) {
+                        if (wx > 80 && wx < 120 && wy > 150) {
+                            const pixelIndex = (screenY * this.width + screenX) * 4;
+                            data[pixelIndex] = 0x44;
+                            data[pixelIndex + 1] = 0x44;
+                            data[pixelIndex + 2] = 0x44;
+                            data[pixelIndex + 3] = 255;
+                        }
+                    }
                 }
             }
         }
         
-        // Draw player
-        this.miniMapCtx.fillStyle = '#FF0000';
-        this.miniMapCtx.beginPath();
-        this.miniMapCtx.arc(
+        this.ctx.putImageData(imageData, 0, 0);
+    }
+    
+    private renderAutomap() {
+        this.automapCtx.fillStyle = '#000';
+        this.automapCtx.fillRect(0, 0, 200, 200);
+        
+        const cellSize = 6;
+        
+        // Draw walls (red like DOOM automap)
+        for (let y = 0; y < this.mapHeight; y++) {
+            for (let x = 0; x < this.mapWidth; x++) {
+                if (this.worldMap[y][x] > 0) {
+                    this.automapCtx.fillStyle = '#FF0000';
+                    this.automapCtx.fillRect(x * cellSize, y * cellSize, cellSize - 1, cellSize - 1);
+                }
+            }
+        }
+        
+        // Draw player (yellow arrow)
+        this.automapCtx.fillStyle = '#FFFF00';
+        this.automapCtx.beginPath();
+        this.automapCtx.arc(
             this.player.x * cellSize,
             this.player.y * cellSize,
-            3, 0, Math.PI * 2
+            2, 0, Math.PI * 2
         );
-        this.miniMapCtx.fill();
+        this.automapCtx.fill();
         
-        // Draw player direction
-        this.miniMapCtx.strokeStyle = '#FFFF00';
-        this.miniMapCtx.beginPath();
-        this.miniMapCtx.moveTo(
+        // Draw direction line
+        this.automapCtx.strokeStyle = '#FFFF00';
+        this.automapCtx.beginPath();
+        this.automapCtx.moveTo(
             this.player.x * cellSize,
             this.player.y * cellSize
         );
-        this.miniMapCtx.lineTo(
-            (this.player.x + this.player.dirX * 2) * cellSize,
-            (this.player.y + this.player.dirY * 2) * cellSize
+        this.automapCtx.lineTo(
+            (this.player.x + this.player.dirX * 3) * cellSize,
+            (this.player.y + this.player.dirY * 3) * cellSize
         );
-        this.miniMapCtx.stroke();
+        this.automapCtx.stroke();
     }
     
-    private updateDebug() {
-        document.getElementById('fps')!.textContent = this.fps.toString();
-        document.getElementById('pos')!.textContent = 
-            `${this.player.x.toFixed(2)}, ${this.player.y.toFixed(2)}`;
-        document.getElementById('angle')!.textContent = 
-            (Math.atan2(this.player.dirY, this.player.dirX) * 180 / Math.PI).toFixed(1);
+    private updateHUD() {
+        // Update health
+        const healthPercent = Math.max(0, this.player.health);
+        document.getElementById('health-fill')!.style.width = healthPercent + '%';
+        document.getElementById('health-value')!.textContent = healthPercent + '%';
         
-        document.getElementById('health')!.textContent = this.player.health + '%';
-        document.getElementById('ammo')!.textContent = this.player.ammo.toString();
+        // Update armor
+        document.getElementById('armor-value')!.textContent = this.player.armor.toString();
         
-        const weapons = ['PISTOL', 'SHOTGUN', 'CHAINGUN', 'ROCKET'];
-        document.getElementById('weapon')!.textContent = weapons[this.player.weapon];
+        // Update ammo
+        document.getElementById('ammo-value')!.textContent = this.player.ammo.toString();
+        
+        // Update frags
+        document.getElementById('frags')!.textContent = `KILLS: ${this.player.frags}`;
+        
+        // Update face based on health
+        if (this.player.health <= 0) {
+            this.currentFace = 4; // Dead
+        } else if (this.player.health < 20) {
+            this.currentFace = 3; // Near death
+        } else if (this.player.health < 50) {
+            this.currentFace = 2; // Hurt
+        } else if (this.player.health < 80) {
+            this.currentFace = 1; // Slight hurt
+        } else {
+            this.currentFace = 0; // Normal
+        }
+        
+        document.getElementById('face-box')!.textContent = this.faces[this.currentFace];
+        
+        // Update keys
+        document.getElementById('key-blue')!.style.opacity = this.player.keys.blue ? '1' : '0.3';
+        document.getElementById('key-yellow')!.style.opacity = this.player.keys.yellow ? '1' : '0.3';
+        document.getElementById('key-red')!.style.opacity = this.player.keys.red ? '1' : '0.3';
     }
     
     private gameLoop = () => {
-        // Render 3D view
+        this.frame++;
         this.render();
-        
-        // Render minimap
-        this.renderMinimap();
-        
-        // Update debug info
-        this.updateDebug();
-        
-        // Calculate FPS
-        this.frameCount++;
-        const now = performance.now();
-        const delta = now - this.lastTime;
-        
-        if (delta >= 1000) {
-            this.fps = Math.round((this.frameCount * 1000) / delta);
-            this.frameCount = 0;
-            this.lastTime = now;
-        }
-        
+        this.renderAutomap();
+        this.updateHUD();
         requestAnimationFrame(this.gameLoop);
     };
 }
 
-// Start the game when page loads
+// Start the game
 window.addEventListener('load', () => {
     new DoomEngine();
-}); 
+});
